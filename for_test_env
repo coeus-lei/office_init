@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#disable ipv6 on kernel
+disable_ipv6() {
+    if [[ -n "$(ip a|awk '/inet6/')" ]]; then
+        if [[ "7" == "$(awk -F"[ |(.)?]" '{print $4}' /etc/centos-release)" ]]; then
+            if ! awk '/GRUB_CMDLINE_LINUX/' /etc/default/grub|grep 'ipv6.disable=1'; then
+                sed -ri 's/^(GRUB_CMDLINE_LINUX.*)(")$/\1 ipv6.disable=1\2/' /etc/default/grub
+            fi
+            grub2-mkconfig -o /boot/grub2/grub.cfg
+        fi
+    fi
+}
+
+#accelerate ssh connection
+ssh_config(){
+    sed -ri 's@(#?)(UseDNS yes)@\2@g' /etc/ssh/sshd_config
+    sed -ri 's/^#?(Port)\s{1,}.*/\1 22992/' /etc/ssh/sshd_config
+    systemctl restart sshd.service
+}
+
+#disable selinux
+setSELinux() {
+    [ -f /etc/sysconfig/selinux ] && { sed -i 's/^SELINUX=.*/#&/;s/^SELINUXTYPE=.*/#&/;/SELINUX=.*/a SELINUX=disabled' /etc/sysconfig/selinux; /usr/sbin/setenforce 0; }
+    [ -f /etc/selinux/config ] && { sed -i 's/^SELINUX=.*/#&/;s/^SELINUXTYPE=.*/#&/;/SELINUX=.*/a SELINUX=disabled' /etc/selinux/config; /usr/sbin/setenforce 0; }
+}
+
+#disable firewalld and enable iptables
+ssh_iptables() {
+    sed -ri 's/^#?(Port)\s{1,}.*/\1 22992/' /etc/ssh/sshd_config
+    curl -Lks4 https://raw.githubusercontent.com/coeus-lei/centos_init/master/iptables.sh|bash
+    curl -Lks4 https://raw.githubusercontent.com/coeus-lei/centos_init/master/iptables_init_rules > /etc/sysconfig/iptables
+    if [ $1 == "publicnet" ]; then
+        sed -i '10s/$/\n-A INPUT                                  -p tcp -m tcp -m state --state NEW -m multiport --dports 22,22992 -m comment --comment "SSH_PORT" -j ACCEPT/' /etc/sysconfig/iptables
+#        sed -ri '/(172.(30|25)|47.90|119.28.51.253|119.9.95.122|MOA)/d' /etc/sysconfig/iptables
+    fi    
+    systemctl restart iptables.service
+    systemctl enable iptables.service
+    [[ "$(awk '/^UseDNS/{print $2}' /etc/ssh/sshd_config)" =~ ^[nN][oO]$ ]] || { echo 'UseDNS no' >> /etc/ssh/sshd_config && service sshd restart; }
+}
