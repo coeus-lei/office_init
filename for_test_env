@@ -37,3 +37,14 @@ ssh_iptables() {
     systemctl enable iptables.service
     [[ "$(awk '/^UseDNS/{print $2}' /etc/ssh/sshd_config)" =~ ^[nN][oO]$ ]] || { echo 'UseDNS no' >> /etc/ssh/sshd_config && service sshd restart; }
 }
+
+#sync server's time
+sync_time() {
+
+    [ -x /usr/sbin/ntpdate ] || yum install ntpdate -y
+    if grep -q ntpdate /var/spool/cron/root 2>/dev/null; then sed -i '/ntpdate/d' /var/spool/cron/root; fi
+    echo -e "\n*/5 * * * * /usr/sbin/ntpdate -u pool.ntp.org >/dev/null 2>&1" >> /var/spool/cron/root
+    /usr/sbin/ntpdate -u pool.ntp.org
+    echo -e "\n=======\n" && cat /var/spool/cron/root
+}
+
